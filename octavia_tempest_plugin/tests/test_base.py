@@ -1159,26 +1159,35 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
             cls._load_member_pki_content(ip_address, key,
                                          revoke_cert=revoke_cert)
 
-        # Enabling memory overcommit allows to run golang static binaries
-        # compiled with a recent golang toolchain (>=1.11). Those binaries
-        # allocate a large amount of virtual memory at init time, and this
-        # allocation fails in tempest's nano flavor (64MB of RAM)
-        # (golang issue reported in https://github.com/golang/go/issues/28114,
-        # follow-up: https://github.com/golang/go/issues/28081)
-        # TODO(gthiemonge): Remove this call when golang issue is resolved.
-        linux_client.exec_command('sudo sh -c "echo 1 > '
-                                  '/proc/sys/vm/overcommit_memory"')
+        # Upstream raises vm.overcommit_memory here so that a golang static
+        # binary can reserve its address space on tempest's 64MB nano
+        # flavor, and its own TODO asks for the call to be removed. Two
+        # reasons it is gone rather than adapted: the flavors this fork
+        # runs against are 512MB and 1GB, so the premise does not hold; and
+        # vm.overcommit_memory is not namespaced, so inside a container the
+        # write fails whatever privileges the guest is given -- there is no
+        # per-container knob to grant. Nothing asserted by any test depends
+        # on it.
 
         # The initial process also supports HTTPS and HTTPS with client auth
+        #
+        # setsid rather than screen: screen is a cirros-era assumption and
+        # is absent from the Ubuntu cloud images this fork boots, while
+        # setsid is in coreutils and always present. The suite has no way to
+        # install it either -- it never passes user_data or a config drive,
+        # so there is no provisioning hook. What starts is the same binary
+        # with the same arguments.
         linux_client.exec_command(
-            'sudo screen -d -m {0} -port 80 -id {1} -https_port 443 -cert {2} '
-            '-key {3} -https_client_auth_port 9443 -client_ca {4}'.format(
+            'sudo setsid {0} -port 80 -id {1} -https_port 443 -cert {2} '
+            '-key {3} -https_client_auth_port 9443 -client_ca {4} '
+            '< /dev/null > /dev/null 2>&1 &'.format(
                 const.TEST_SERVER_BINARY, start_id, const.TEST_SERVER_CERT,
                 const.TEST_SERVER_KEY, const.TEST_SERVER_CLIENT_CA))
 
-        linux_client.exec_command('sudo screen -d -m {0} -port 81 '
-                                  '-id {1}'.format(const.TEST_SERVER_BINARY,
-                                                   start_id + 1))
+        linux_client.exec_command('sudo setsid {0} -port 81 -id {1} '
+                                  '< /dev/null > /dev/null 2>&1 &'.format(
+                                      const.TEST_SERVER_BINARY,
+                                      start_id + 1))
 
     # Cirros does not configure the assigned IPv6 address by default
     # so enable it manually like tempest does here:
