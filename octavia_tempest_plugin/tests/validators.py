@@ -122,6 +122,10 @@ class ValidatorsMixin(test.BaseTestCase):
             session.close()
         raise exceptions.TimeoutException()
 
+    # Deadline applied when a caller does not name one. Generous, because
+    # its job is to end a hang, not to police latency.
+    UDP_REQUEST_DEFAULT_TIMEOUT = 30
+
     @classmethod
     def make_udp_request(cls, vip_address, port=80, timeout=None,
                          source_port=None):
@@ -161,8 +165,16 @@ class ValidatorsMixin(test.BaseTestCase):
         server_address = (vip_address, port)
         data = b"data\n"
 
-        if timeout is not None:
-            sock.settimeout(timeout)
+        # A datagram send with no receive deadline is an unbounded wait,
+        # and some callers reach here from setUpClass, where tempest's
+        # OS_TEST_TIMEOUT fixture -- installed per test in setUp -- cannot
+        # reclaim it. One dropped datagram then hangs the whole run rather
+        # than failing a test, which is worse than any failure it could
+        # report. Callers that pass a timeout keep exactly the behaviour
+        # they asked for; only the unset case changes, from "wait forever"
+        # to "give up eventually".
+        sock.settimeout(timeout if timeout is not None
+                        else cls.UDP_REQUEST_DEFAULT_TIMEOUT)
 
         try:
             sock.sendto(data, server_address)
