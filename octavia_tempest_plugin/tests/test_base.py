@@ -896,16 +896,15 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
         LOG.debug('Octavia Setup: webserver2_public_ip = %s',
                   cls.webserver2_public_ip)
 
-        if CONF.load_balancer.test_with_ipv6:
-            # Enable the IPv6 nic in webserver 1
-            cls._enable_ipv6_nic_webserver(
-                cls.webserver1_public_ip, cls.lb_member_keypair['private_key'],
-                cls.webserver1_ipv6, cls.lb_member_1_subnet_prefix)
-
-            # Enable the IPv6 nic in webserver 2
-            cls._enable_ipv6_nic_webserver(
-                cls.webserver2_public_ip, cls.lb_member_keypair['private_key'],
-                cls.webserver2_ipv6, cls.lb_member_2_subnet_prefix)
+        # Upstream configures the guest's IPv6 address by hand here because
+        # cirros does not do it itself. The Ubuntu cloud images this fork
+        # boots do: cloud-init writes netplan from the network metadata and
+        # the address is already on the interface, so the manual step is
+        # redundant -- and it fails, twice over. It names eth0, which does
+        # not exist on an Incus container (interfaces are nic<hash>), and
+        # even addressed to the right device it returns "address already
+        # assigned". Guests that do not self-configure IPv6 would need this
+        # back, matched by MAC rather than by device name.
 
         # Set up serving on webserver 1
         cls._install_start_webserver(cls.webserver1_public_ip,
@@ -1188,20 +1187,6 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
                                   '< /dev/null > /dev/null 2>&1 &'.format(
                                       const.TEST_SERVER_BINARY,
                                       start_id + 1))
-
-    # Cirros does not configure the assigned IPv6 address by default
-    # so enable it manually like tempest does here:
-    # tempest/scenario/test_netowrk_v6.py turn_nic6_on()
-    @classmethod
-    def _enable_ipv6_nic_webserver(cls, ip_address, ssh_key,
-                                   ipv6_address, ipv6_prefix):
-        linux_client = remote_client.RemoteClient(
-            ip_address, CONF.validation.image_ssh_user, pkey=ssh_key,
-            **cls.remote_client_args())
-        linux_client.validate_authentication()
-
-        linux_client.exec_command('sudo ip address add {0}/{1} dev '
-                                  'eth0'.format(ipv6_address, ipv6_prefix))
 
     @classmethod
     def _validate_webserver(cls, ip_address, start_id):
