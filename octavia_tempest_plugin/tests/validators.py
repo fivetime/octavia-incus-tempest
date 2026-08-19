@@ -67,14 +67,31 @@ class ValidatorsMixin(test.BaseTestCase):
         :raises TimeoutException: The request timed out.
         :returns: The response data.
         """
-        session = requests_session
-        if requests_session is None:
-            session = requests.Session()
-        if source_port:
-            session.mount('http://',
-                          requests_adapters.SourcePortAdapter(source_port))
-            session.mount('https://',
-                          requests_adapters.SourcePortAdapter(source_port))
+        # A session of our own is built fresh for every attempt, not once
+        # for the retry loop. With a fixed source port an attempt can fail
+        # before a connection exists -- the kernel refuses the 4-tuple with
+        # EADDRNOTAVAIL while the previous connection's remnant ages out --
+        # and that failure leaves a half-initialised connection object in
+        # the shared session's pool. The next attempt draws the poisoned
+        # object first: on the wire its replacement connects, sends the
+        # request and gets the answer, and urllib3 still reports the whole
+        # attempt as a connection failure. Captured live: a complete
+        # SYN-to-response exchange on the wire four milliseconds before the
+        # library logged "Failed to establish a new connection" for it, on
+        # every retry until the deadline. A fresh session has no pool to
+        # poison, so the attempt that reaches the wire is the attempt that
+        # counts. A caller-owned session is left alone: it exists to test
+        # connection reuse, and rebuilding it would unmake the test.
+        def build_session():
+            if requests_session is not None:
+                return requests_session
+            fresh = requests.Session()
+            if source_port:
+                fresh.mount('http://',
+                            requests_adapters.SourcePortAdapter(source_port))
+                fresh.mount('https://',
+                            requests_adapters.SourcePortAdapter(source_port))
+            return fresh
 
         session_kwargs = {}
         if not HTTPS_verify:
@@ -86,6 +103,7 @@ class ValidatorsMixin(test.BaseTestCase):
         session_kwargs['timeout'] = request_interval
         start = time.time()
         while time.time() - start < request_timeout:
+            session = build_session()
             try:
                 response = session.get(URL, **session_kwargs)
                 response_status_code = response.status_code
@@ -106,6 +124,8 @@ class ValidatorsMixin(test.BaseTestCase):
             except requests.exceptions.Timeout:
                 # Don't sleep as we have already waited the interval.
                 LOG.info('Request for %s timed out. Retrying.', URL)
+                if requests_session is None:
+                    session.close()
             except (exceptions.InvalidHttpSuccessCode,
                     exceptions.InvalidHTTPResponseBody,
                     requests.exceptions.SSLError):
@@ -117,9 +137,12 @@ class ValidatorsMixin(test.BaseTestCase):
                     raise e
                 LOG.info('Validate URL got exception: %s. '
                          'Retrying.', e)
+                # Closed before the sleep, not after it: the dead attempt's
+                # socket holds the source port for as long as it exists,
+                # which is the very thing the next attempt is waiting out.
+                if requests_session is None:
+                    session.close()
                 time.sleep(request_interval)
-        if requests_session is None:
-            session.close()
         raise exceptions.TimeoutException()
 
     # Deadline applied when a caller does not name one. Generous, because
