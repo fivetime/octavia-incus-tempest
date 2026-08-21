@@ -973,16 +973,31 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
             if len(router) == 1:
                 router = router[0]
 
-                # Add IPv6 VIP subnet to router1
-                cls.os_admin_routers_client.add_router_interface(
-                    router['id'],
-                    subnet_id=cls.lb_member_vip_ipv6_subnet['id'])
-                cls.addClassResourceCleanup(
-                    waiters.wait_for_not_found,
-                    cls.os_admin_routers_client.remove_router_interface,
-                    cls.os_admin_routers_client.remove_router_interface,
-                    router['id'],
-                    subnet_id=cls.lb_member_vip_ipv6_subnet['id'])
+                # Add IPv6 VIP subnet to router1. The member IPv6 subnets
+                # go on the same router: upstream never routes to a member
+                # over IPv6 -- the amphora plugs an interface into each
+                # member subnet and reaches it on-link -- so these subnets
+                # were plugged into no router at all. The incus provider's
+                # workers hold no per-member-subnet interfaces; they reach
+                # members through the router their service subnet is on,
+                # which is this one. Unrouted member subnets meant every
+                # v6 member sat behind an unreachable prefix: HAProxy's
+                # health checks timed out and traffic never passed, while
+                # the same members were fine over IPv4 (whose subnets are
+                # routed through the tenant router).
+                ipv6_subnets = [cls.lb_member_vip_ipv6_subnet,
+                                cls.lb_member_1_ipv6_subnet,
+                                cls.lb_member_2_ipv6_subnet]
+                for subnet in ipv6_subnets:
+                    if not subnet:
+                        continue
+                    cls.os_admin_routers_client.add_router_interface(
+                        router['id'], subnet_id=subnet['id'])
+                    cls.addClassResourceCleanup(
+                        waiters.wait_for_not_found,
+                        cls.os_admin_routers_client.remove_router_interface,
+                        cls.os_admin_routers_client.remove_router_interface,
+                        router['id'], subnet_id=subnet['id'])
 
         # Add member subnet 1 to router
         cls.lb_mem_routers_client.add_router_interface(
