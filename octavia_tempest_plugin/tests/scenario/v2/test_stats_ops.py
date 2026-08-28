@@ -66,8 +66,16 @@ class StatisticsScenarioTest(test_base.LoadBalancerBaseTestWithCompute):
 
         if CONF.validation.connect_method == 'floating':
             port_id = lb[const.VIP_PORT_ID]
-            subnet_id = cls.lb_member_vip_subnet[const.ID]
-            floating_ip = cls._create_floating_ip(port_id, subnet_id=subnet_id)
+            result = cls.lb_mem_float_ip_client.create_floatingip(
+                floating_network_id=CONF.network.public_network_id,
+                port_id=port_id)
+            floating_ip = result['floatingip']
+            LOG.info('lb_stats floating ip: %s', floating_ip)
+            cls.addClassResourceCleanup(
+                waiters.wait_for_not_found,
+                cls.lb_mem_float_ip_client.delete_floatingip,
+                cls.lb_mem_float_ip_client.show_floatingip,
+                floatingip_id=floating_ip['id'])
             cls.lb_vip_address = floating_ip['floating_ip_address']
         else:
             cls.lb_vip_address = lb[const.VIP_ADDRESS]
