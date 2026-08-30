@@ -57,7 +57,15 @@ class StatisticsScenarioTest(test_base.LoadBalancerBaseTestWithCompute):
         lb_name = data_utils.rand_name("lb_member_lb1-stats")
         lb_kwargs = {const.PROVIDER: CONF.load_balancer.provider,
                      const.NAME: lb_name}
-        cls._setup_lb_network_kwargs(lb_kwargs)
+        # Pin the family. Left to itself _setup_lb_network_kwargs takes
+        # IPv6 whenever test_with_ipv6 is on, and the floating IP below
+        # then has nothing to attach to -- Neutron will not put one on a
+        # port with no fixed IPv4 address, so resource_setup raises and
+        # the whole class is skipped without running. test_traffic_ops
+        # pins 4 for the same reason and test_ipv6_traffic_ops pins 6 and
+        # skips the floating IP entirely; a class that wants one has to
+        # ask for v4.
+        cls._setup_lb_network_kwargs(lb_kwargs, ip_version=4)
 
         lb = cls.mem_lb_client.create_loadbalancer(**lb_kwargs)
         cls.lb_id = lb[const.ID]
