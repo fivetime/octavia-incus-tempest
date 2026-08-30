@@ -872,6 +872,7 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
         cls.webserver1_ip = server_details.get('ipv4_address')
         cls.webserver1_ipv6 = server_details.get('ipv6_address')
         cls.webserver1_public_ip = server_details['public_ipv4_address']
+        cls.webserver1_mac = server_details['mac_address']
 
         LOG.debug('Octavia Setup: lb_member_webserver1 = %s',
                   cls.lb_member_webserver1[const.ID])
@@ -888,6 +889,7 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
         cls.webserver2_ip = server_details.get('ipv4_address')
         cls.webserver2_ipv6 = server_details.get('ipv6_address')
         cls.webserver2_public_ip = server_details['public_ipv4_address']
+        cls.webserver2_mac = server_details['mac_address']
 
         LOG.debug('Octavia Setup: lb_member_webserver2 = %s',
                   cls.lb_member_webserver2[const.ID])
@@ -896,15 +898,20 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
         LOG.debug('Octavia Setup: webserver2_public_ip = %s',
                   cls.webserver2_public_ip)
 
-        # Upstream configures the guest's IPv6 address by hand here because
-        # cirros does not do it itself. The Ubuntu cloud images this fork
-        # boots do: cloud-init writes netplan from the network metadata and
-        # the address is already on the interface, so the manual step is
-        # redundant -- and it fails, twice over. It names eth0, which does
-        # not exist on an Incus container (interfaces are nic<hash>), and
-        # even addressed to the right device it returns "address already
-        # assigned". Guests that do not self-configure IPv6 would need this
-        # back, matched by MAC rather than by device name.
+        if CONF.load_balancer.test_with_ipv6:
+            cls._enable_ipv6_nic_webserver(
+                cls.webserver1_public_ip,
+                cls.lb_member_keypair['private_key'],
+                cls.webserver1_ipv6, cls.lb_member_1_subnet_prefix,
+                cls.webserver1_mac,
+                (cls.lb_member_1_ipv6_subnet or {}).get('gateway_ip'))
+
+            cls._enable_ipv6_nic_webserver(
+                cls.webserver2_public_ip,
+                cls.lb_member_keypair['private_key'],
+                cls.webserver2_ipv6, cls.lb_member_2_subnet_prefix,
+                cls.webserver2_mac,
+                (cls.lb_member_2_ipv6_subnet or {}).get('gateway_ip'))
 
         # Set up serving on webserver 1
         cls._install_start_webserver(cls.webserver1_public_ip,
@@ -1084,6 +1091,8 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
                 webserver_details['ipv4_address'] = addr['addr']
             if addr['version'] == 6:
                 webserver_details['ipv6_address'] = addr['addr']
+        webserver_details['mac_address'] = (
+            instance_network[0]['OS-EXT-IPS-MAC:mac_addr'])
 
         if CONF.validation.connect_method == 'floating':
             result = cls.lb_mem_ports_client.list_ports(
@@ -1202,6 +1211,52 @@ class LoadBalancerBaseTestWithCompute(LoadBalancerBaseTest):
                                   '< /dev/null > /dev/null 2>&1 &'.format(
                                       const.TEST_SERVER_BINARY,
                                       start_id + 1))
+
+    # A guest configures its assigned IPv6 address on its own only when
+    # the subnet advertises one, through SLAAC or DHCPv6.  The subnets
+    # these tests create set neither ipv6_ra_mode nor ipv6_address_mode,
+    # so nothing ever reaches the guest: the address lives only in
+    # Neutron, and the member answers over IPv4 while timing out over
+    # IPv6.  Configure it here.
+    #
+    # Name the device by its MAC.  Upstream hardcodes eth0, which no
+    # guest here has -- an Incus container's interfaces are nic<hash>,
+    # a QEMU guest's are ens<n> -- and each webserver holds two of them,
+    # so choosing by position would be a coin flip.
+    #
+    # The default route matters as much as the address.  Upstream never
+    # needs one because the amphora plugs an interface into each member
+    # subnet and reaches it on-link; a worker of this provider holds no
+    # such interface and arrives from its own subnet, off-link to the
+    # guest, so without a route the SYN lands and the reply never goes
+    # anywhere.
+    @classmethod
+    def _enable_ipv6_nic_webserver(cls, ip_address, ssh_key, ipv6_address,
+                                   ipv6_prefix, mac_address, gateway_ip):
+        linux_client = remote_client.RemoteClient(
+            ip_address, CONF.validation.image_ssh_user, pkey=ssh_key,
+            **cls.remote_client_args())
+        linux_client.validate_authentication()
+
+        device = linux_client.exec_command(
+            'for d in /sys/class/net/*; do '
+            'if [ "$(cat $d/address 2>/dev/null)" = "{0}" ]; then '
+            'basename $d; fi; done'.format(mac_address.lower())).strip()
+        if not device:
+            raise Exception(
+                'The guest at {0} has no interface with MAC {1}, so {2} '
+                'cannot be configured.'.format(ip_address, mac_address,
+                                               ipv6_address))
+
+        # replace, not add: re-running against a guest that already has
+        # the address is not a failure.
+        linux_client.exec_command(
+            'sudo ip -6 address replace {0}/{1} dev {2}'.format(
+                ipv6_address, ipv6_prefix, device))
+        if gateway_ip:
+            linux_client.exec_command(
+                'sudo ip -6 route replace default via {0} dev {1}'.format(
+                    gateway_ip, device))
 
     @classmethod
     def _validate_webserver(cls, ip_address, start_id):
