@@ -106,11 +106,11 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
     vars:
       configure_swap_size: 8192
       devstack_localrc:
-        USE_PYTHON3: true
         LIBVIRT_TYPE: kvm
         LIBVIRT_CPU_MODE: host-passthrough
       devstack_local_conf:
@@ -157,10 +157,10 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
     vars:
       devstack_localrc:
-        USE_PYTHON3: true
         LIBVIRT_TYPE: kvm
         LIBVIRT_CPU_MODE: host-passthrough
       devstack_local_conf:
@@ -299,7 +299,6 @@
           MULTI_HOST: 1
           SERVICE_HOST: "{{ hostvars['controller']['nodepool']['private_ipv4'] }}"
           HOST_IP: "{{ hostvars['controller']['nodepool']['private_ipv4'] }}"
-          USE_PYTHON3: true
           LIBVIRT_TYPE: kvm
           LIBVIRT_CPU_MODE: host-passthrough
           # Octavia specific settings
@@ -341,7 +340,6 @@
           DATABASE_HOST: "{{ hostvars['controller']['nodepool']['private_ipv4'] }}"
           RABBIT_HOST: "{{ hostvars['controller']['nodepool']['private_ipv4'] }}"
           GLANCE_HOSTPORT: "{{ hostvars['controller']['nodepool']['private_ipv4'] }}:9292"
-          USE_PYTHON3: true
           LIBVIRT_TYPE: kvm
           LIBVIRT_CPU_MODE: host-passthrough
           # Octavia specific settings
@@ -359,8 +357,6 @@
             $OCTAVIA_CONF:
               DEFAULT:
                 debug: True
-              api_settings:
-                api_v1_enabled: False
               amphora_agent:
                 forward_all_logs: True
             "/$NEUTRON_CORE_PLUGIN_CONF":
@@ -406,8 +402,6 @@
             $OCTAVIA_CONF:
               DEFAULT:
                 debug: True
-              api_settings:
-                api_v1_enabled: False
               amphora_agent:
                 forward_all_logs: True
             "/$NEUTRON_CORE_PLUGIN_CONF":
@@ -430,7 +424,7 @@
           q-dhcp: false
           q-l3: false
           q-meta: false
-          q-ovn-metadata-agent: true
+          q-ovn-agent: true
 
 - job:
     name: octavia-dsvm-noop-base
@@ -471,8 +465,6 @@
       devstack_local_conf:
         post-config:
           $OCTAVIA_CONF:
-            api_settings:
-              api_v1_enabled: False
             audit:
               enabled: True
             audit_middleware_notifications:
@@ -487,6 +479,7 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
       - ^octavia_tempest_plugin/tests/act_stdby_scenario/.*
       - ^octavia_tempest_plugin/tests/barbican_scenario/.*
@@ -506,6 +499,12 @@
               RBAC_test_type: advanced
 
 - job:
+    name: octavia-v2-dsvm-noop-api-stable-2026-2
+    parent: octavia-v2-dsvm-noop-api
+    nodeset: octavia-single-node-ubuntu-noble
+    override-checkout: stable/2026.2
+
+- job:
     name: octavia-v2-dsvm-noop-api-stable-2026-1
     parent: octavia-v2-dsvm-noop-api
     nodeset: octavia-single-node-ubuntu-noble
@@ -518,32 +517,10 @@
     override-checkout: stable/2025.2
 
 - job:
-    name: octavia-v2-dsvm-noop-api-stable-2025-1
-    parent: octavia-v2-dsvm-noop-api
-    nodeset: octavia-single-node-ubuntu-noble
-    override-checkout: stable/2025.1
-
-- job:
-    name: octavia-v2-dsvm-noop-api-stable-2024-2
-    parent: octavia-v2-dsvm-noop-api
-    nodeset: octavia-single-node-ubuntu-jammy
-    override-checkout: stable/2024.2
-    vars:
-      devstack_local_conf:
-        test-config:
-          "$TEMPEST_CONFIG":
-            load_balancer:
-              RBAC_test_type: advanced
-
-- job:
     name: octavia-v2-dsvm-scenario-base
     parent: octavia-dsvm-live-base
     vars:
       devstack_local_conf:
-        post-config:
-          $OCTAVIA_CONF:
-            api_settings:
-              api_v1_enabled: False
         test-config:
           "$TEMPEST_CONFIG":
             loadbalancer-feature-enabled:
@@ -556,6 +533,7 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
       - ^octavia_tempest_plugin/tests/act_stdby_scenario/.*
       - ^octavia_tempest_plugin/tests/api/.*
@@ -592,11 +570,6 @@
     name: octavia-v2-dsvm-scenario-ipv6-only
     parent: octavia-dsvm-live-base-ipv6-only
     vars:
-      devstack_local_conf:
-        post-config:
-          $OCTAVIA_CONF:
-            api_settings:
-              api_v1_enabled: False
       tempest_concurrency: 2
       tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.*traffic_ops
       tox_envlist: all
@@ -605,11 +578,30 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
       - ^octavia_tempest_plugin/tests/act_stdby_scenario/.*
       - ^octavia_tempest_plugin/tests/api/.*
       - ^octavia_tempest_plugin/tests/barbican_scenario/.*
       - ^octavia_tempest_plugin/tests/spare_pool_scenario/.*  # TODO: remove
+
+- job:
+    name: octavia-v2-dsvm-scenario-stable-2026-2
+    parent: octavia-v2-dsvm-scenario
+    nodeset: octavia-single-node-ubuntu-noble
+    override-checkout: stable/2026.2
+
+- job:
+    name: octavia-v2-dsvm-scenario-traffic-ops-stable-2026-2
+    parent: octavia-v2-dsvm-scenario-stable-2026-2
+    vars:
+      tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.*traffic_ops
+
+- job:
+    name: octavia-v2-dsvm-scenario-non-traffic-ops-stable-2026-2
+    parent: octavia-v2-dsvm-scenario-stable-2026-2
+    vars:
+      tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.(?!.*traffic_ops)
 
 - job:
     name: octavia-v2-dsvm-scenario-stable-2026-1
@@ -647,48 +639,6 @@
     vars:
       tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.(?!.*traffic_ops)
 
-- job:
-    name: octavia-v2-dsvm-scenario-stable-2025-1
-    parent: octavia-v2-dsvm-scenario
-    nodeset: octavia-single-node-ubuntu-noble
-    override-checkout: stable/2025.1
-
-- job:
-    name: octavia-v2-dsvm-scenario-traffic-ops-stable-2025-1
-    parent: octavia-v2-dsvm-scenario-stable-2025-1
-    vars:
-      tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.*traffic_ops
-
-- job:
-    name: octavia-v2-dsvm-scenario-non-traffic-ops-stable-2025-1
-    parent: octavia-v2-dsvm-scenario-stable-2025-1
-    vars:
-      tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.(?!.*traffic_ops)
-
-- job:
-    name: octavia-v2-dsvm-scenario-stable-2024-2
-    parent: octavia-v2-dsvm-scenario
-    nodeset: octavia-single-node-ubuntu-jammy
-    override-checkout: stable/2024.2
-    vars:
-      devstack_local_conf:
-        test-config:
-          "$TEMPEST_CONFIG":
-            load_balancer:
-              RBAC_test_type: advanced
-
-- job:
-    name: octavia-v2-dsvm-scenario-traffic-ops-stable-2024-2
-    parent: octavia-v2-dsvm-scenario-stable-2024-2
-    vars:
-      tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.*traffic_ops
-
-- job:
-    name: octavia-v2-dsvm-scenario-non-traffic-ops-stable-2024-2
-    parent: octavia-v2-dsvm-scenario-stable-2024-2
-    vars:
-      tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.(?!.*traffic_ops)
-
 # Legacy jobs for the transition to the act-stdby two node jobs
 - job:
     name: octavia-v2-dsvm-scenario-two-node
@@ -702,6 +652,7 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
       - ^octavia_tempest_plugin/tests/act_stdby_scenario/.*
       - ^octavia_tempest_plugin/tests/api/.*
@@ -836,6 +787,7 @@
     vars:
       tempest_test_regex: ^octavia_tempest_plugin.tests.scenario.v2.(?!.*traffic_ops)
 
+# Still in-use in octavia stable/2025.1
 - job:
     name: octavia-v2-dsvm-scenario-ubuntu-jammy
     parent: octavia-v2-dsvm-scenario
@@ -867,6 +819,7 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
       - ^octavia_tempest_plugin/tests/act_stdby_scenario/.*
       - ^octavia_tempest_plugin/tests/api/.*
@@ -888,6 +841,12 @@
     nodeset: octavia-single-node-ubuntu-jammy
 
 - job:
+    name: octavia-v2-dsvm-tls-barbican-stable-2026-2
+    parent: octavia-v2-dsvm-tls-barbican
+    nodeset: octavia-single-node-ubuntu-noble
+    override-checkout: stable/2026.2
+
+- job:
     name: octavia-v2-dsvm-tls-barbican-stable-2026-1
     parent: octavia-v2-dsvm-tls-barbican
     nodeset: octavia-single-node-ubuntu-noble
@@ -898,24 +857,6 @@
     parent: octavia-v2-dsvm-tls-barbican
     nodeset: octavia-single-node-ubuntu-noble
     override-checkout: stable/2025.2
-
-- job:
-    name: octavia-v2-dsvm-tls-barbican-stable-2025-1
-    parent: octavia-v2-dsvm-tls-barbican
-    nodeset: octavia-single-node-ubuntu-noble
-    override-checkout: stable/2025.1
-
-- job:
-    name: octavia-v2-dsvm-tls-barbican-stable-2024-2
-    parent: octavia-v2-dsvm-tls-barbican
-    nodeset: octavia-single-node-ubuntu-jammy
-    override-checkout: stable/2024.2
-    vars:
-      devstack_local_conf:
-        test-config:
-          "$TEMPEST_CONFIG":
-            load_balancer:
-              RBAC_test_type: advanced
 
 - job:
     name: octavia-v2-dsvm-spare-pool
@@ -982,8 +923,6 @@
       devstack_local_conf:
         post-config:
           $OCTAVIA_CONF:
-            api_settings:
-              api_v1_enabled: False
             controller_worker:
               loadbalancer_topology: ACTIVE_STANDBY
             task_flow:
@@ -1005,8 +944,6 @@
       devstack_local_conf:
         post-config:
           $OCTAVIA_CONF:
-            api_settings:
-              api_v1_enabled: False
             controller_worker:
               loadbalancer_topology: ACTIVE_STANDBY
             task_flow:
@@ -1030,6 +967,12 @@
     nodeset: octavia-single-node-ubuntu-jammy
 
 - job:
+    name: octavia-v2-act-stdby-dsvm-scenario-stable-2026-2
+    parent: octavia-v2-act-stdby-dsvm-scenario
+    nodeset: octavia-single-node-ubuntu-noble
+    override-checkout: stable/2026.2
+
+- job:
     name: octavia-v2-act-stdby-dsvm-scenario-stable-2026-1
     parent: octavia-v2-act-stdby-dsvm-scenario
     nodeset: octavia-single-node-ubuntu-noble
@@ -1040,24 +983,6 @@
     parent: octavia-v2-act-stdby-dsvm-scenario
     nodeset: octavia-single-node-ubuntu-noble
     override-checkout: stable/2025.2
-
-- job:
-    name: octavia-v2-act-stdby-dsvm-scenario-stable-2025-1
-    parent: octavia-v2-act-stdby-dsvm-scenario
-    nodeset: octavia-single-node-ubuntu-noble
-    override-checkout: stable/2025.1
-
-- job:
-    name: octavia-v2-act-stdby-dsvm-scenario-stable-2024-2
-    parent: octavia-v2-act-stdby-dsvm-scenario
-    nodeset: octavia-single-node-ubuntu-jammy
-    override-checkout: stable/2024.2
-    vars:
-      devstack_local_conf:
-        test-config:
-          "$TEMPEST_CONFIG":
-            load_balancer:
-              RBAC_test_type: advanced
 
 # Temporary job, remove once it is no longer used in octavia gates
 - job:
@@ -1117,6 +1042,7 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
       - ^octavia/amphorae/.*$
       - ^octavia/api/drivers/amphora_driver/.*$
@@ -1146,6 +1072,7 @@
       - ^api-ref/.*$
       - ^doc/.*$
       - ^etc/.*$
+      - ^\.pre-commit-config\.yaml$
       - ^releasenotes/.*$
       - ^octavia/amphorae/.*$
       - ^octavia/api/drivers/amphora_driver/.*$
